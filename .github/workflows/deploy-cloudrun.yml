@@ -1,0 +1,167 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Service to deploy (leave empty for all)'
+        required: false
+        type: choice
+        options:
+          - all
+          - gateway-api
+          - agent-harvester
+          - agent-insight
+          - agent-planner
+          - agent-assistant
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+  SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SA_KEY }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+      
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker
+      
+      - name: Deploy Gateway API
+        if: github.event.inputs.service == 'all' || github.event.inputs.service == 'gateway-api' || github.event.inputs.service == ''
+        env:
+          SERVICE: gateway-api
+          PORT: 8080
+        run: |
+          IMAGE="gcr.io/$PROJECT_ID/ecopulse-gateway-api"
+          docker build -f services/gateway-api/Dockerfile -t $IMAGE:$GITHUB_SHA -t $IMAGE:latest ./services
+          docker push $IMAGE:$GITHUB_SHA
+          docker push $IMAGE:latest
+          gcloud run deploy ecopulse-gateway-api \
+            --image $IMAGE:$GITHUB_SHA \
+            --platform managed \
+            --region $REGION \
+            --allow-unauthenticated \
+            --port $PORT \
+            --memory 512Mi \
+            --cpu 1 \
+            --timeout 300 \
+            --max-instances 10 \
+            --set-env-vars "MOCK=0,GCP_PROJECT_ID=$PROJECT_ID,REGION=$REGION"
+      
+      - name: Deploy Harvester
+        if: github.event.inputs.service == 'all' || github.event.inputs.service == 'agent-harvester' || github.event.inputs.service == ''
+        env:
+          SERVICE: agent-harvester
+          PORT: 8081
+        run: |
+          IMAGE="gcr.io/$PROJECT_ID/ecopulse-harvester"
+          docker build -f services/agent-harvester/Dockerfile -t $IMAGE:$GITHUB_SHA -t $IMAGE:latest ./services
+          docker push $IMAGE:$GITHUB_SHA
+          docker push $IMAGE:latest
+          gcloud run deploy ecopulse-harvester \
+            --image $IMAGE:$GITHUB_SHA \
+            --platform managed \
+            --region $REGION \
+            --allow-unauthenticated \
+            --port $PORT \
+            --memory 512Mi \
+            --cpu 1 \
+            --timeout 300 \
+            --max-instances 10 \
+            --set-env-vars "MOCK=0,GCP_PROJECT_ID=$PROJECT_ID,REGION=$REGION"
+      
+      - name: Deploy Insight
+        if: github.event.inputs.service == 'all' || github.event.inputs.service == 'agent-insight' || github.event.inputs.service == ''
+        env:
+          SERVICE: agent-insight
+          PORT: 8082
+        run: |
+          IMAGE="gcr.io/$PROJECT_ID/ecopulse-insight"
+          docker build -f services/agent-insight/Dockerfile -t $IMAGE:$GITHUB_SHA -t $IMAGE:latest ./services
+          docker push $IMAGE:$GITHUB_SHA
+          docker push $IMAGE:latest
+          gcloud run deploy ecopulse-insight \
+            --image $IMAGE:$GITHUB_SHA \
+            --platform managed \
+            --region $REGION \
+            --allow-unauthenticated \
+            --port $PORT \
+            --memory 512Mi \
+            --cpu 1 \
+            --timeout 300 \
+            --max-instances 10 \
+            --set-env-vars "MOCK=0,GCP_PROJECT_ID=$PROJECT_ID,REGION=$REGION"
+      
+      - name: Deploy Planner
+        if: github.event.inputs.service == 'all' || github.event.inputs.service == 'agent-planner' || github.event.inputs.service == ''
+        env:
+          SERVICE: agent-planner
+          PORT: 8083
+        run: |
+          IMAGE="gcr.io/$PROJECT_ID/ecopulse-planner"
+          docker build -f services/agent-planner/Dockerfile -t $IMAGE:$GITHUB_SHA -t $IMAGE:latest ./services
+          docker push $IMAGE:$GITHUB_SHA
+          docker push $IMAGE:latest
+          gcloud run deploy ecopulse-planner \
+            --image $IMAGE:$GITHUB_SHA \
+            --platform managed \
+            --region $REGION \
+            --allow-unauthenticated \
+            --port $PORT \
+            --memory 512Mi \
+            --cpu 1 \
+            --timeout 300 \
+            --max-instances 10 \
+            --set-env-vars "MOCK=0,GCP_PROJECT_ID=$PROJECT_ID,REGION=$REGION"
+      
+      - name: Deploy Assistant
+        if: github.event.inputs.service == 'all' || github.event.inputs.service == 'agent-assistant' || github.event.inputs.service == ''
+        env:
+          SERVICE: agent-assistant
+          PORT: 8084
+        run: |
+          IMAGE="gcr.io/$PROJECT_ID/ecopulse-assistant"
+          docker build -f services/agent-assistant/Dockerfile -t $IMAGE:$GITHUB_SHA -t $IMAGE:latest ./services
+          docker push $IMAGE:$GITHUB_SHA
+          docker push $IMAGE:latest
+          gcloud run deploy ecopulse-assistant \
+            --image $IMAGE:$GITHUB_SHA \
+            --platform managed \
+            --region $REGION \
+            --allow-unauthenticated \
+            --port $PORT \
+            --memory 512Mi \
+            --cpu 1 \
+            --timeout 300 \
+            --max-instances 10 \
+            --set-env-vars "MOCK=0,GCP_PROJECT_ID=$PROJECT_ID,REGION=$REGION"
+      
+      - name: Output Service URLs
+        run: |
+          echo "## 🚀 Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Service URLs:" >> $GITHUB_STEP_SUMMARY
+          for service in gateway-api harvester insight planner assistant; do
+            URL=$(gcloud run services describe ecopulse-$service --platform managed --region $REGION --format 'value(status.url)' 2>/dev/null || echo "Not deployed")
+            echo "- **$service**: $URL" >> $GITHUB_STEP_SUMMARY
+          done
+

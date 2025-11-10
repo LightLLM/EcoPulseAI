@@ -1,0 +1,18 @@
+{
+  "name": "ecopulse",
+  "version": "1.0.0",
+  "description": "EcoPulse.AI - Energy Intelligence Platform",
+  "scripts": {
+    "dev:gateway": "cd services/gateway-api && uvicorn main:app --port 8080 --reload",
+    "dev:harvester": "cd services/agent-harvester && uvicorn main:app --port 8081 --reload",
+    "dev:insight": "cd services/agent-insight && uvicorn main:app --port 8082 --reload",
+    "dev:planner": "cd services/agent-planner && uvicorn main:app --port 8083 --reload",
+    "dev:assistant": "cd services/agent-assistant && uvicorn main:app --port 8084 --reload",
+    "dev:web": "cd web/dashboard && pnpm dev",
+    "dev:all": "concurrently \"npm run dev:gateway\" \"npm run dev:harvester\" \"npm run dev:insight\" \"npm run dev:planner\" \"npm run dev:assistant\" \"npm run dev:web\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
+

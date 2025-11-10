@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  lint-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r services/gateway-api/requirements.txt
+          pip install -r services/agent-harvester/requirements.txt
+          pip install -r services/agent-insight/requirements.txt
+          pip install -r services/agent-planner/requirements.txt
+          pip install -r services/agent-assistant/requirements.txt
+          pip install flake8 black
+      
+      - name: Lint with flake8
+        run: |
+          flake8 services/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 services/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      
+      - name: Check formatting with black
+        run: |
+          black --check services/
+
+  lint-typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: web/dashboard/package.json
+      
+      - name: Install dependencies
+        working-directory: web/dashboard
+        run: npm ci
+      
+      - name: Lint
+        working-directory: web/dashboard
+        run: npm run lint || true
+
+  test-services:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r services/gateway-api/requirements.txt
+          pip install -r services/agent-harvester/requirements.txt
+          pip install -r services/agent-insight/requirements.txt
+          pip install -r services/agent-planner/requirements.txt
+          pip install -r services/agent-assistant/requirements.txt
+      
+      - name: Initialize database
+        env:
+          MOCK: 1
+        run: |
+          python -c "from services.common.gcp import init_db; init_db()"
+      
+      - name: Test services startup
+        env:
+          MOCK: 1
+        run: |
+          timeout 10 python -m uvicorn services.gateway-api.main:app --port 8080 &
+          sleep 3
+          curl -f http://localhost:8080/health || exit 1
+          pkill -f uvicorn
+
+  build-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Build Gateway API
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services
+          file: ./services/gateway-api/Dockerfile
+          push: false
+          tags: ecopulse-gateway:test
+      
+      - name: Build Harvester
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services
+          file: ./services/agent-harvester/Dockerfile
+          push: false
+          tags: ecopulse-harvester:test
+      
+      - name: Build Insight
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services
+          file: ./services/agent-insight/Dockerfile
+          push: false
+          tags: ecopulse-insight:test
+      
+      - name: Build Planner
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services
+          file: ./services/agent-planner/Dockerfile
+          push: false
+          tags: ecopulse-planner:test
+      
+      - name: Build Assistant
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services
+          file: ./services/agent-assistant/Dockerfile
+          push: false
+          tags: ecopulse-assistant:test
+
